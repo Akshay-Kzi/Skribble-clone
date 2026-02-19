@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SClone - Draw & Guess</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Login / Lobby Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="login-container">
+                <h1>SClone</h1>
+                <div class="form-group">
+                    <input type="text" id="username" placeholder="Enter your name" maxlength="15">
+                </div>
+
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="join">Join Room</button>
+                    <button class="tab-btn" data-tab="create">Create Room</button>
+                </div>
+
+                <div id="join-tab" class="tab-content active">
+                    <div class="form-group">
+                        <input type="text" id="room-input" placeholder="Room ID" maxlength="10">
+                    </div>
+                    <button id="join-btn" class="btn secondary">Join Room</button>
+                </div>
+
+                <div id="create-tab" class="tab-content">
+                    <div class="form-group">
+                        <label>Max Players:</label>
+                        <input type="number" id="config-max-players" value="8" min="2" max="16">
+                    </div>
+                    <div class="form-group">
+                        <label>Round Time (s):</label>
+                        <input type="number" id="config-round-time" value="60" min="10" max="300">
+                    </div>
+                    <div class="form-group">
+                        <label>Total Rounds:</label>
+                        <input type="number" id="config-rounds" value="3" min="1" max="10">
+                    </div>
+                    <div class="form-group">
+                        <label>Custom Words (comma separated):</label>
+                        <textarea id="config-words" rows="3" placeholder="apple, banana, ..."></textarea>
+                    </div>
+                    <button id="create-btn" class="btn primary">Create New Room</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <header class="game-header">
+                <div class="room-info">Room: <span id="room-display">---</span></div>
+                <div class="timer">Time: <span id="time-display">60</span>s</div>
+                <div class="word-display" id="word-display">WAITING FOR PLAYERS...</div>
+                <div class="round-display">Round: <span id="round-display">1</span>/3</div>
+            </header>
+
+            <div class="game-content">
+                <!-- Left: Tools (Only visible to drawer) -->
+                <div class="toolbox" id="toolbox">
+                    <div class="color-picker">
+                        <div class="color-swatch active" style="background-color: #000000;" data-color="#000000"></div>
+                        <div class="color-swatch" style="background-color: #ff0000;" data-color="#ff0000"></div>
+                        <div class="color-swatch" style="background-color: #00ff00;" data-color="#00ff00"></div>
+                        <div class="color-swatch" style="background-color: #0000ff;" data-color="#0000ff"></div>
+                        <div class="color-swatch" style="background-color: #ffff00;" data-color="#ffff00"></div>
+                        <div class="color-swatch" style="background-color: #ff00ff;" data-color="#ff00ff"></div>
+                        <div class="color-swatch" style="background-color: #00ffff;" data-color="#00ffff"></div>
+                        <div class="color-swatch" style="background-color: #ffffff;" data-color="#ffffff"></div>
+                    </div>
+                    <div class="brush-sizes">
+                        <div class="brush-size small" data-size="2"></div>
+                        <div class="brush-size medium active" data-size="5"></div>
+                        <div class="brush-size large" data-size="10"></div>
+                    </div>
+                    <button id="clear-btn" class="btn danger small">Clear</button>
+                </div>
+
+                <!-- Center: Canvas -->
+                <div class="canvas-container">
+                    <canvas id="drawing-board" width="800" height="600"></canvas>
+                    <div id="overlay-message" class="overlay hidden">
+                        <p id="overlay-text"></p>
+                        <div id="word-choices" class="choices hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Right: Sidebar -->
+                <div class="sidebar">
+                    <div class="player-list" id="player-list">
+                        <!-- Players populated here -->
+                    </div>
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chat-input" placeholder="Type your guess here...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="game-controls" class="game-controls">
+                <button id="start-game-btn" class="btn primary hidden">Start Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
