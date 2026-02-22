@@ -176,18 +176,23 @@ class Room {
     }
 
     endTurn() {
-        this.stopTimer();
-        this.transitionTo(STATE_ROUND_END);
+    console.log("Ending turn...");
+    this.stopTimer();
+    this.transitionTo(STATE_ROUND_END);
 
-        // Reveal word
-        this.io.to(this.id).emit('round_end', { word: this.currentWord });
+    this.io.to(this.id).emit('round_end', { word: this.currentWord });
 
-        setTimeout(() => {
-            if (this.usersCount() === 0) return; // Room might be dead
-            this.currentDrawerIndex++;
-            this.triggerRoundStart();
-        }, 5000); // 5s break
-    }
+    setTimeout(() => {
+        console.log("Starting next turn...");
+        console.log("Drawer index before:", this.currentDrawerIndex);
+        console.log("Players length:", this.players.length);
+
+        if (this.usersCount() === 0) return;
+
+        this.currentDrawerIndex++;
+        this.triggerRoundStart();
+    }, 5000);
+}
 
     endGame() {
         console.log(`Room ${this.id}: Ending Game.`);
@@ -196,8 +201,15 @@ class Room {
 
         // Send final scores
         try {
-            const sorted = [...this.players].sort((a, b) => b.score - a.score);
-            this.io.to(this.id).emit('game_over', { players: sorted });
+            const sorted = [...this.players]
+                .sort((a, b) => b.score - a.score)
+                .map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    score: p.score
+                }));
+
+        this.io.to(this.id).emit('game_over', { players: sorted });
             console.log(`Room ${this.id}: Sent game_over event.`);
         } catch (err) {
             console.error(`Room ${this.id}: Error in endGame:`, err);
@@ -399,12 +411,18 @@ class Room {
             state: this.state,
             round: this.round,
             totalRounds: this.config.totalRounds,
-            timeLeft: this.timeLeft,
+            timeLeft: this.state === 'waiting' ? 0 : this.timeLeft,
             drawer: drawerId,
         };
 
         if (this.state === STATE_GAME_END) {
-            baseState.leaderboard = [...this.players].sort((a, b) => b.score - a.score);
+            baseState.leaderboard = [...this.players]
+                .sort((a, b) => b.score - a.score)
+                .map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    score: p.score
+                }));
         }
 
         this.players.forEach(p => {

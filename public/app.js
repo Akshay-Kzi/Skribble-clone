@@ -39,12 +39,41 @@ const overlayText = document.getElementById('overlay-text');
 const wordChoicesContainer = document.getElementById('word-choices');
 const startGameBtn = document.getElementById('start-game-btn');
 
+const pencilBtn = document.getElementById("pencil-btn");
+const bucketBtn = document.getElementById("bucket-btn");
+const eraserBtn = document.getElementById("eraser-btn");
+
+pencilBtn.onclick = () => {
+    currentTool = "pencil";
+    setActiveTool(pencilBtn);
+};
+
+bucketBtn.onclick = () => {
+    currentTool = "bucket";
+    setActiveTool(bucketBtn);
+};
+
+eraserBtn.onclick = () => {
+    currentTool = "eraser";
+    setActiveTool(eraserBtn);
+};
+
+function setActiveTool(activeBtn) {
+    document.querySelectorAll(".tool-btn").forEach(btn => {
+        btn.classList.remove("active");
+    });
+    activeBtn.classList.add("active");
+}
+
+
+
 // Game State
 let isDrawer = false;
 let isDrawing = false;
 let currentColor = '#000000';
 let currentSize = 5;
 let myId = null;
+let currentTool = "pencil";  // default
 
 // --- Tab Logic ---
 tabBtns.forEach(btn => {
@@ -112,16 +141,29 @@ startGameBtn.addEventListener('click', () => {
 // Canvas Drawing Logic
 function startPosition(e) {
     if (!isDrawer) return;
-    isDrawing = true;
 
     const { x, y } = getPos(e);
 
-    // Draw locally
+    // 🪣 BUCKET TOOL
+    if (currentTool === "bucket") {
+        bucketFill(x, y, currentColor);
+        socket.emit('draw_event', { type: 'bucket', x, y, color: currentColor });
+        return;
+    }
+
+    // ✏️ PENCIL TOOL
+    isDrawing = true;
+
     ctx.beginPath();
     ctx.moveTo(x, y);
 
-    // Emit START
-    socket.emit('draw_event', { type: 'start', x, y, color: currentColor, size: currentSize });
+    if (currentTool === "eraser") {
+        ctx.globalCompositeOperation = "destination-out";
+    } else {
+        ctx.globalCompositeOperation = "source-over";
+    }
+
+    socket.emit('draw_event', { type: 'start', x, y, color: currentColor, size: currentSize, tool: currentTool });
 }
 
 function stopPosition() {
@@ -164,6 +206,72 @@ function getPos(e) {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top
     };
+}
+
+// 🪣 Bucket Fill Logic
+function bucketFill(startX, startY, fillColor) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    const stack = [[Math.floor(startX), Math.floor(startY)]];
+    const startPos = (Math.floor(startY) * width + Math.floor(startX)) * 4;
+
+    const targetColor = [
+        data[startPos],
+        data[startPos + 1],
+        data[startPos + 2],
+        data[startPos + 3]
+    ];
+
+    const fillRGBA = hexToRgba(fillColor);
+
+    if (colorsMatch(targetColor, fillRGBA)) return;
+
+    while (stack.length) {
+        const [x, y] = stack.pop();
+        const pos = (y * width + x) * 4;
+
+        const currentColor = [
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3]
+        ];
+
+        if (!colorsMatch(currentColor, targetColor)) continue;
+
+        data[pos] = fillRGBA[0];
+        data[pos + 1] = fillRGBA[1];
+        data[pos + 2] = fillRGBA[2];
+        data[pos + 3] = 255;
+
+        if (x > 0) stack.push([x - 1, y]);
+        if (x < width - 1) stack.push([x + 1, y]);
+        if (y > 0) stack.push([x, y - 1]);
+        if (y < height - 1) stack.push([x, y + 1]);
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
+function hexToRgba(hex) {
+    const bigint = parseInt(hex.slice(1), 16);
+    return [
+        (bigint >> 16) & 255,
+        (bigint >> 8) & 255,
+        bigint & 255,
+        255
+    ];
+}
+
+function colorsMatch(a, b) {
+    return a[0] === b[0] &&
+           a[1] === b[1] &&
+           a[2] === b[2] &&
+           a[3] === b[3];
 }
 
 // Throttling
@@ -261,13 +369,26 @@ socket.on('draw_event', (data) => {
         ctx.beginPath();
         ctx.lineCap = 'round';
         ctx.lineWidth = data.size;
-        ctx.strokeStyle = data.color;
+
+        if (data.tool === "eraser") {
+            ctx.globalCompositeOperation = "destination-out";
+        } else {
+            ctx.globalCompositeOperation = "source-over";
+            ctx.strokeStyle = data.color;
+        }
+
         ctx.moveTo(data.x, data.y);
+
     } else if (data.type === 'line') {
         ctx.lineTo(data.x, data.y);
         ctx.stroke();
+
     } else if (data.type === 'end') {
         ctx.beginPath();
+        ctx.globalCompositeOperation = "source-over";
+
+    } else if (data.type === 'bucket') {
+        bucketFill(data.x, data.y, data.color);
     }
 });
 
@@ -410,30 +531,32 @@ socket.on('game_restarted', () => {
 
 socket.on('game_over', (data) => {
     overlayMessage.classList.remove('hidden');
-    let html = '<h2>Game Over!</h2><ul class="leaderboard">';
-    data.players.forEach(p => {
+    const leaderboard = data.players;
+
+    let html = `<h2>🏁 Final Results</h2>`;
+
+    // Top 3 podium
+    if (leaderboard.length > 0) {
+        html += `<div class="podium gold">🥇 ${leaderboard[0].name} - ${leaderboard[0].score} pts</div>`;
+    }
+    if (leaderboard.length > 1) {
+        html += `<div class="podium silver">🥈 ${leaderboard[1].name} - ${leaderboard[1].score} pts</div>`;
+    }
+    if (leaderboard.length > 2) {
+        html += `<div class="podium bronze">🥉 ${leaderboard[2].name} - ${leaderboard[2].score} pts</div>`;
+    }
+
+    html += `<h3>Full Leaderboard</h3><ul class="leaderboard">`;
+
+    leaderboard.forEach(p => {
         html += `<li><span>${p.name}</span> <span>${p.score} pts</span></li>`;
     });
-    html += '</ul>';
+
+    html += `</ul>`;
+
     overlayText.innerHTML = html;
 
-    // Add restart button if host
-    // We determine host by valid assumption: host is players[0] locally if we tracked it, 
-    // or we check if we are the first in the list if the list is sorted by join order?
-    // Actually the server sends sorted by score.
-    // Let's use the player list from `player_update` which we store? 
-    // Wait, `player_update` is sent often.
-    // Let's rely on server validation for the action, but UI needs to know if I can show button.
-    // `myId` is set.
-    // The server `game_over` payload doesn't say who is host.
-    // But `player_update` sends `isDrawer`. 
-    // Let's look at `playerList` DOM or logic.
-    // Actually, `app.js` doesn't track `isHost` globally. 
-    // Let's just show it, if server rejects it, fine. OR better:
-    // We already have `players` from `player_update` stored in DOM. 
-    // But we don't have a clean persistent `isHost` variable.
-    // Let's create a button anyway. If clicked and not host, server ignores.
-
+    // Restart button INSIDE
     const restartBtn = document.createElement('button');
     restartBtn.id = 'restart-btn';
     restartBtn.className = 'btn primary';
@@ -441,5 +564,6 @@ socket.on('game_over', (data) => {
     restartBtn.onclick = () => {
         socket.emit('restart_game');
     };
+
     overlayText.appendChild(restartBtn);
 });
