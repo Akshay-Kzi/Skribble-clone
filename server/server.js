@@ -172,6 +172,7 @@ io.on('connection', (socket) => {
     });
 
      socket.on('canvas_state_update', (data) => {
+         if (process.env.ENABLE_CANVAS_STATE_SYNC !== '1') return;
          if (!currentRoomId) return;
          const room = getRoom(currentRoomId);
          if (!room) return;

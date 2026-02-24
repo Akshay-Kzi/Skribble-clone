@@ -664,28 +664,5 @@ socket.on('game_over', (data) => {
 
 // Canvas State Update Event (for undo/redo synchronization)
 socket.on('canvas_state_update', (data) => {
-    if (!data || !data.buffer || !data.width || !data.height) return;
-
-    let bytes;
-    // Browser may receive:
-    // - ArrayBuffer
-    // - Uint8Array
-    // - Node Buffer serialized form: { type: 'Buffer', data: [...] }
-    if (data.buffer instanceof ArrayBuffer) {
-        bytes = new Uint8ClampedArray(data.buffer);
-    } else if (ArrayBuffer.isView(data.buffer)) {
-        bytes = new Uint8ClampedArray(data.buffer.buffer);
-    } else if (data.buffer && Array.isArray(data.buffer.data)) {
-        bytes = new Uint8ClampedArray(data.buffer.data);
-    } else {
-        return;
-    }
-
-    const imageData = new ImageData(bytes, data.width, data.height);
-    ctx.putImageData(imageData, 0, 0);
-
-    if (typeof data.historyStep === 'number') {
-        historyStep = data.historyStep;
-        updateUndoRedoButtons();
-    }
+    return;
 });
