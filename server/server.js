@@ -13,6 +13,60 @@ const io = new Server(server, {
     }
 });
 
+function sanitizeUsername(username) {
+    return String(username || '')
+        .replace(/[\r\n\t]/g, ' ')
+        .trim()
+        .slice(0, 15);
+}
+
+function sanitizeRoomId(roomId) {
+    const id = String(roomId || '').trim().toUpperCase();
+    // Keep it simple: A-Z/0-9, 3-10 chars
+    if (!/^[A-Z0-9]{3,10}$/.test(id)) return null;
+    return id;
+}
+
+function isValidDrawingPayload(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (typeof data.type !== 'string') return false;
+    const allowed = new Set(['start', 'line', 'end', 'bucket', 'clear']);
+    if (!allowed.has(data.type)) return false;
+
+    if (data.type === 'start' || data.type === 'line' || data.type === 'bucket') {
+        if (typeof data.x !== 'number' || !Number.isFinite(data.x)) return false;
+        if (typeof data.y !== 'number' || !Number.isFinite(data.y)) return false;
+    }
+
+    if (data.type === 'start') {
+        if (typeof data.size !== 'number' || !Number.isFinite(data.size)) return false;
+        // Allow reasonable brush sizes only
+        if (data.size < 1 || data.size > 50) return false;
+        if (typeof data.color !== 'string') return false;
+        if (data.tool && typeof data.tool !== 'string') return false;
+    }
+
+    if (data.type === 'bucket') {
+        if (typeof data.color !== 'string') return false;
+    }
+
+    return true;
+}
+
+function createFixedWindowLimiter({ windowMs, max }) {
+    let windowStart = Date.now();
+    let count = 0;
+    return () => {
+        const now = Date.now();
+        if (now - windowStart >= windowMs) {
+            windowStart = now;
+            count = 0;
+        }
+        count++;
+        return count <= max;
+    };
+}
+
 // Serve static files
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -26,26 +80,33 @@ function getRoom(id) {
 io.on('connection', (socket) => {
     let currentRoomId = null;
 
+    // Lightweight per-socket rate limiting (prevents obvious spam / lag attacks)
+    const allowDrawEvent = createFixedWindowLimiter({ windowMs: 1000, max: 500 });
+    const allowChatMessage = createFixedWindowLimiter({ windowMs: 2000, max: 6 });
+
     socket.on('join_room', ({ roomId, username, config }) => {
         try {
-            if (!roomId || !username) {
+            const safeRoomId = sanitizeRoomId(roomId);
+            const safeUsername = sanitizeUsername(username);
+
+            if (!safeRoomId || !safeUsername) {
                 socket.emit('error_message', 'Invalid Room ID or Username');
                 return;
             }
 
-            let room = getRoom(roomId);
+            let room = getRoom(safeRoomId);
 
             if (!room) {
-                console.log(`Creating new room: ${roomId}`);
+                console.log(`Creating new room: ${safeRoomId}`);
                 // Create new room with config if provided
-                room = new Room(roomId, io, config);
-                rooms.set(roomId, room);
+                room = new Room(safeRoomId, io, config);
+                rooms.set(safeRoomId, room);
             }
 
-            const joined = room.addPlayer(socket, username);
+            const joined = room.addPlayer(socket, safeUsername);
             if (joined) {
-                currentRoomId = roomId;
-                console.log(`User ${username} joined ${roomId}`);
+                currentRoomId = safeRoomId;
+                console.log(`User ${safeUsername} joined ${safeRoomId}`);
             }
         } catch (err) {
             console.error('Error in join_room:', err);
@@ -85,7 +146,11 @@ io.on('connection', (socket) => {
     socket.on('draw_event', (data) => {
         if (!currentRoomId) return;
         const room = getRoom(currentRoomId);
-        if (room) {
+        if (!room) return;
+        if (!allowDrawEvent()) return;
+        if (!isValidDrawingPayload(data)) return;
+
+        {
             room.handleDrawingEvent(socket.id, data);
         }
     });
@@ -141,9 +206,14 @@ io.on('connection', (socket) => {
     socket.on('chat_message', (msg) => {
         if (!currentRoomId) return;
         const room = getRoom(currentRoomId);
-        if (room) {
-            room.processGuess(socket.id, msg);
-        }
+        if (!room) return;
+        if (!allowChatMessage()) return;
+
+        const text = String(msg || '').replace(/[\r\n]/g, ' ').trim();
+        if (!text) return;
+        if (text.length > 120) return;
+
+        room.processGuess(socket.id, text);
     });
 
     socket.on('disconnect', () => {
