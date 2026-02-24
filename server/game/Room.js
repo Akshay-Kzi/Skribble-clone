@@ -47,9 +47,19 @@ class Room {
         this.timer = null;
         this.timeLeft = 0;
 
+        this.isEndingTurn = false;
+        this.nextTurnTimeout = null;
+
         // Hint System
         this.hints = []; // Indices of revealed letters
         this.hintInterval = null;
+    }
+
+    clearNextTurnTimeout() {
+        if (this.nextTurnTimeout) {
+            clearTimeout(this.nextTurnTimeout);
+            this.nextTurnTimeout = null;
+        }
     }
 
     handleUndo() {
@@ -160,6 +170,9 @@ class Room {
     }
 
     startTurn() {
+        this.isEndingTurn = false;
+        this.clearNextTurnTimeout();
+
         this.currentWord = null;
         this.strokes = []; // Clear canvas server-side
         this.redoStrokes = [];
@@ -212,27 +225,37 @@ class Room {
     }
 
     endTurn() {
-    console.log("Ending turn...");
-    this.stopTimer();
-    this.transitionTo(STATE_ROUND_END);
+        if (this.isEndingTurn) return;
+        if (this.state !== STATE_DRAWING && this.state !== STATE_CHOOSING) return;
 
-    this.io.to(this.id).emit('round_end', { word: this.currentWord });
+        this.isEndingTurn = true;
+        console.log("Ending turn...");
 
-    setTimeout(() => {
-        console.log("Starting next turn...");
-        console.log("Drawer index before:", this.currentDrawerIndex);
-        console.log("Players length:", this.players.length);
+        this.stopTimer();
+        this.clearNextTurnTimeout();
+        this.transitionTo(STATE_ROUND_END);
 
-        if (this.usersCount() === 0) return;
+        this.io.to(this.id).emit('round_end', { word: this.currentWord });
 
-        this.currentDrawerIndex++;
-        this.triggerRoundStart();
-    }, 5000);
+        this.nextTurnTimeout = setTimeout(() => {
+            this.nextTurnTimeout = null;
+
+            console.log("Starting next turn...");
+            console.log("Drawer index before:", this.currentDrawerIndex);
+            console.log("Players length:", this.players.length);
+
+            if (this.usersCount() === 0) return;
+            if (this.state !== STATE_ROUND_END) return;
+
+            this.currentDrawerIndex++;
+            this.triggerRoundStart();
+        }, 5000);
 }
 
     endGame() {
         console.log(`Room ${this.id}: Ending Game.`);
         this.stopTimer();
+        this.clearNextTurnTimeout();
         this.transitionTo(STATE_GAME_END);
 
         // Send final scores
@@ -273,6 +296,8 @@ class Room {
         }
 
         // Reset Game Data
+        this.isEndingTurn = false;
+        this.clearNextTurnTimeout();
         this.round = 1;
         this.currentDrawerIndex = 0;
         this.players.forEach(p => p.score = 0);
@@ -292,6 +317,8 @@ class Room {
 
     resetGame(reason = "Game reset") {
         this.stopTimer();
+        this.isEndingTurn = false;
+        this.clearNextTurnTimeout();
         this.state = STATE_WAITING;
         if (this.hintInterval) clearInterval(this.hintInterval);
         this.hintInterval = null;
