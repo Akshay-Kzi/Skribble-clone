@@ -42,6 +42,17 @@ const startGameBtn = document.getElementById('start-game-btn');
 const pencilBtn = document.getElementById("pencil-btn");
 const bucketBtn = document.getElementById("bucket-btn");
 const eraserBtn = document.getElementById("eraser-btn");
+const undoBtn = document.getElementById("undo-btn");
+const redoBtn = document.getElementById("redo-btn");
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 pencilBtn.onclick = () => {
     currentTool = "pencil";
@@ -65,8 +76,6 @@ function setActiveTool(activeBtn) {
     activeBtn.classList.add("active");
 }
 
-
-
 // Game State
 let isDrawer = false;
 let isDrawing = false;
@@ -74,6 +83,12 @@ let currentColor = '#000000';
 let currentSize = 5;
 let myId = null;
 let currentTool = "pencil";  // default
+let isHost = false;
+
+// Undo/Redo State
+let drawingHistory = [];
+let historyStep = -1;
+const maxHistorySteps = 50;
 
 // --- Tab Logic ---
 tabBtns.forEach(btn => {
@@ -89,7 +104,6 @@ tabBtns.forEach(btn => {
 });
 
 // --- Auth Logic ---
-
 createBtn.addEventListener('click', () => {
     const username = usernameInput.value.trim();
     if (!username) return alert('Please enter a username');
@@ -147,6 +161,7 @@ function startPosition(e) {
     // 🪣 BUCKET TOOL
     if (currentTool === "bucket") {
         bucketFill(x, y, currentColor);
+        saveState(); // Save state after bucket fill
         socket.emit('draw_event', { type: 'bucket', x, y, color: currentColor });
         return;
     }
@@ -171,8 +186,9 @@ function stopPosition() {
     isDrawing = false;
     ctx.beginPath(); // Reset path locally
 
-    // Emit END
+    // Save state after completing a stroke
     if (isDrawer) {
+        saveState();
         socket.emit('draw_event', { type: 'end' });
     }
 }
@@ -293,7 +309,6 @@ canvas.addEventListener('touchstart', startPosition);
 canvas.addEventListener('touchend', stopPosition);
 canvas.addEventListener('touchmove', draw);
 
-
 // Tools
 colorSwatches.forEach(swatch => {
     swatch.addEventListener('click', () => {
@@ -313,9 +328,57 @@ brushSizes.forEach(size => {
 
 clearBtn.addEventListener('click', () => {
     if (!isDrawer) return;
+    saveState();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     socket.emit('clear_canvas');
 });
+
+// Undo/Redo Functionality
+undoBtn.addEventListener('click', () => {
+    if (!isDrawer) return;
+    socket.emit('undo');
+});
+
+redoBtn.addEventListener('click', () => {
+    if (!isDrawer) return;
+    socket.emit('redo');
+});
+
+function saveState() {
+    drawingHistory = drawingHistory.slice(0, historyStep + 1);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    drawingHistory.push(imageData);
+
+    if (drawingHistory.length > maxHistorySteps) {
+        drawingHistory.shift();
+    }
+
+    historyStep = drawingHistory.length - 1;
+
+    updateUndoRedoButtons();
+}
+
+function restoreState() {
+    if (historyStep >= 0 && historyStep < drawingHistory.length) {
+        ctx.putImageData(drawingHistory[historyStep], 0, 0);
+        updateUndoRedoButtons();
+    }
+}
+
+function updateUndoRedoButtons() {
+    undoBtn.disabled = !isDrawer;
+    redoBtn.disabled = !isDrawer;
+
+    undoBtn.style.opacity = undoBtn.disabled ? '0.5' : '1';
+    redoBtn.style.opacity = redoBtn.disabled ? '0.5' : '1';
+}
+
+function initializeCanvas() {
+    drawingHistory = [];
+    historyStep = -1;
+    saveState();
+}
 
 // Chat
 chatInput.addEventListener('keypress', (e) => {
@@ -339,7 +402,7 @@ socket.on('player_update', (players) => {
     }
 
     playerList.innerHTML = '';
-    const isHost = players.length > 0 && players[0].id === socket.id;
+    isHost = players.length > 0 && players[0].id === socket.id;
 
     if (isHost && players.length >= 2) {
         startGameBtn.classList.remove('hidden');
@@ -350,16 +413,28 @@ socket.on('player_update', (players) => {
     players.forEach(p => {
         const div = document.createElement('div');
         div.className = `player-item ${p.isDrawer ? 'drawer' : ''} ${p.hasGuessed ? 'correct' : ''}`;
-        div.innerHTML = `
-            <span>${p.name} ${p.isDrawer ? '✏️' : ''}</span>
-            <span>pts: ${p.score}</span>
-        `;
+
+        const left = document.createElement('span');
+        left.textContent = `${escapeHtml(p.name)}${p.isDrawer ? ' ✏️' : ''}`;
+
+        const right = document.createElement('span');
+        right.textContent = `pts: ${p.score}`;
+
+        div.appendChild(left);
+        div.appendChild(right);
+
         playerList.appendChild(div);
 
         if (p.id === socket.id) {
             myId = p.id;
         }
     });
+
+    const me = players.find(p => p.id === socket.id);
+    if (me) {
+        isDrawer = !!me.isDrawer;
+        updateUndoRedoButtons();
+    }
 });
 
 socket.on('draw_event', (data) => {
@@ -393,14 +468,24 @@ socket.on('draw_event', (data) => {
 });
 
 socket.on('drawing_history', (strokes) => {
-    // Replay complete history
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear first
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     strokes.forEach(stroke => {
+        if (stroke.type === 'bucket') {
+            bucketFill(stroke.x, stroke.y, stroke.color);
+            return;
+        }
+
         ctx.beginPath();
         ctx.lineCap = 'round';
         ctx.lineWidth = stroke.size;
-        ctx.strokeStyle = stroke.color;
+
+        if (stroke.tool === 'eraser') {
+            ctx.globalCompositeOperation = 'destination-out';
+        } else {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = stroke.color;
+        }
 
         if (stroke.points && stroke.points.length > 0) {
             ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
@@ -409,8 +494,12 @@ socket.on('drawing_history', (strokes) => {
             }
             ctx.stroke();
         }
+
+        ctx.globalCompositeOperation = 'source-over';
     });
-    ctx.beginPath(); // Reset
+    ctx.beginPath();
+
+    updateUndoRedoButtons();
 });
 
 socket.on('clear_canvas', () => {
@@ -418,19 +507,23 @@ socket.on('clear_canvas', () => {
 });
 
 socket.on('game_state_update', (state) => {
-    // Handle state transitions
+    if (state && state.drawer) {
+        isDrawer = state.drawer === socket.id;
+        updateUndoRedoButtons();
+    }
+
     if (state.state === 'choosing') {
         overlayMessage.classList.remove('hidden');
-        overlayText.innerText = state.drawer === myId ? 'Choose a word!' : 'Drawer is choosing a word...';
-        // Clear old game over button if present
+        overlayText.innerText = state.drawer === socket.id ? 'Choose a word!' : 'Drawer is choosing a word...';
+
         const oldBtn = document.getElementById('restart-btn');
         if (oldBtn) oldBtn.remove();
 
         wordChoicesContainer.innerHTML = '';
-        isDrawer = state.drawer === myId;
 
         if (isDrawer) {
             toolbox.style.display = 'flex';
+            initializeCanvas();
         } else {
             toolbox.style.display = 'none';
         }
@@ -438,6 +531,7 @@ socket.on('game_state_update', (state) => {
         overlayMessage.classList.add('hidden');
         wordChoicesContainer.classList.add('hidden');
         if (state.word) wordDisplay.innerText = state.word;
+
     } else if (state.state === 'waiting') {
         overlayMessage.classList.add('hidden');
         wordDisplay.innerText = 'WAITING FOR PLAYERS...';
@@ -457,24 +551,21 @@ socket.on('game_state_update', (state) => {
         if (state.leaderboard) {
             let html = '<h2>Game Over!</h2><ul class="leaderboard">';
             state.leaderboard.forEach(p => {
-                html += `<li><span>${p.name}</span> <span>${p.score} pts</span></li>`;
+                html += `<li><span>${escapeHtml(p.name)}</span> <span>${escapeHtml(p.score)} pts</span></li>`;
             });
             html += '</ul>';
             overlayText.innerHTML = html;
 
-            // Re-add restart button availability (client side check for now)
-            // Ideally we check if WE are the host which is players[0]
-            // We can get players from playerList elements or just assume if we see the button it's valid
-            // But we need to add the button again since we overwrote innerHTML
-
-            const restartBtn = document.createElement('button');
-            restartBtn.id = 'restart-btn';
-            restartBtn.className = 'btn primary';
-            restartBtn.innerText = 'Play Again (Host Only)';
-            restartBtn.onclick = () => {
-                socket.emit('restart_game');
-            };
-            overlayText.appendChild(restartBtn);
+            if (isHost) {
+                const restartBtn = document.createElement('button');
+                restartBtn.id = 'restart-btn';
+                restartBtn.className = 'btn primary';
+                restartBtn.innerText = 'Play Again (Host Only)';
+                restartBtn.onclick = () => {
+                    socket.emit('restart_game');
+                };
+                overlayText.appendChild(restartBtn);
+            }
 
         } else {
             overlayText.innerText = 'Game Over! Calculating scores...';
@@ -518,7 +609,10 @@ socket.on('chat_message', (msg) => {
         div.innerText = msg.text;
     } else {
         div.className = 'message chat';
-        div.innerHTML = `<strong>${msg.name}:</strong> ${msg.text}`;
+        const strong = document.createElement('strong');
+        strong.textContent = `${escapeHtml(msg.name)}: `;
+        div.appendChild(strong);
+        div.appendChild(document.createTextNode(String(msg.text)));
     }
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -535,35 +629,63 @@ socket.on('game_over', (data) => {
 
     let html = `<h2>🏁 Final Results</h2>`;
 
-    // Top 3 podium
     if (leaderboard.length > 0) {
-        html += `<div class="podium gold">🥇 ${leaderboard[0].name} - ${leaderboard[0].score} pts</div>`;
+        html += `<div class="podium gold">🥇 ${escapeHtml(leaderboard[0].name)} - ${escapeHtml(leaderboard[0].score)} pts</div>`;
     }
     if (leaderboard.length > 1) {
-        html += `<div class="podium silver">🥈 ${leaderboard[1].name} - ${leaderboard[1].score} pts</div>`;
+        html += `<div class="podium silver">🥈 ${escapeHtml(leaderboard[1].name)} - ${escapeHtml(leaderboard[1].score)} pts</div>`;
     }
     if (leaderboard.length > 2) {
-        html += `<div class="podium bronze">🥉 ${leaderboard[2].name} - ${leaderboard[2].score} pts</div>`;
+        html += `<div class="podium bronze">🥉 ${escapeHtml(leaderboard[2].name)} - ${escapeHtml(leaderboard[2].score)} pts</div>`;
     }
 
     html += `<h3>Full Leaderboard</h3><ul class="leaderboard">`;
 
     leaderboard.forEach(p => {
-        html += `<li><span>${p.name}</span> <span>${p.score} pts</span></li>`;
+        html += `<li><span>${escapeHtml(p.name)}</span> <span>${escapeHtml(p.score)} pts</span></li>`;
     });
 
     html += `</ul>`;
 
     overlayText.innerHTML = html;
 
-    // Restart button INSIDE
-    const restartBtn = document.createElement('button');
-    restartBtn.id = 'restart-btn';
-    restartBtn.className = 'btn primary';
-    restartBtn.innerText = 'Play Again (Host Only)';
-    restartBtn.onclick = () => {
-        socket.emit('restart_game');
-    };
+    if (isHost) {
+        const restartBtn = document.createElement('button');
+        restartBtn.id = 'restart-btn';
+        restartBtn.className = 'btn primary';
+        restartBtn.innerText = 'Play Again (Host Only)';
+        restartBtn.onclick = () => {
+            socket.emit('restart_game');
+        };
 
-    overlayText.appendChild(restartBtn);
+        overlayText.appendChild(restartBtn);
+    }
+});
+
+// Canvas State Update Event (for undo/redo synchronization)
+socket.on('canvas_state_update', (data) => {
+    if (!data || !data.buffer || !data.width || !data.height) return;
+
+    let bytes;
+    // Browser may receive:
+    // - ArrayBuffer
+    // - Uint8Array
+    // - Node Buffer serialized form: { type: 'Buffer', data: [...] }
+    if (data.buffer instanceof ArrayBuffer) {
+        bytes = new Uint8ClampedArray(data.buffer);
+    } else if (ArrayBuffer.isView(data.buffer)) {
+        bytes = new Uint8ClampedArray(data.buffer.buffer);
+    } else if (data.buffer && Array.isArray(data.buffer.data)) {
+        bytes = new Uint8ClampedArray(data.buffer.data);
+    } else {
+        return;
+    }
+
+    const imageData = new ImageData(bytes, data.width, data.height);
+    ctx.putImageData(imageData, 0, 0);
+
+    if (typeof data.historyStep === 'number') {
+        historyStep = data.historyStep;
+        updateUndoRedoButtons();
+    }
 });

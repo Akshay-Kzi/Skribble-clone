@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SClone - Draw & Guess</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
 <body>
@@ -55,21 +56,27 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
             <header class="game-header">
-                <div class="room-info">Room: <span id="room-display">---</span></div>
+                <div class="game-info">
+                    <div class="room-info">Room: <span id="room-display">---</span></div>
+                    <div class="round-display">Round: <span id="round-display">1</span>/3</div>
+                </div>
                 <div class="timer">Time: <span id="time-display">60</span>s</div>
                 <div class="word-display" id="word-display">WAITING FOR PLAYERS...</div>
-                <div class="round-display">Round: <span id="round-display">1</span>/3</div>
             </header>
 
             <div class="game-content">
                 <!-- Left: Tools (Only visible to drawer) -->
                 <div class="toolbox" id="toolbox">
 
-                    <!-- 🆕   ADD THIS TOOL SECTION -->
                     <div class="tool-section">
-                        <button id="pencil-btn" class="tool-btn active">✏</button>
-                        <button id="bucket-btn" class="tool-btn">🪣</button>
-                        <button id="eraser-btn" class="tool-btn">🧽</button>
+                        <button id="pencil-btn" class="tool-btn active"><i class="fas fa-pencil-alt"></i></button>
+                        <button id="bucket-btn" class="tool-btn"><i class="fas fa-fill-drip"></i></button>
+                        <button id="eraser-btn" class="tool-btn"><i class="fas fa-eraser"></i></button>
+                    </div>
+
+                    <div class="tool-section">
+                        <button id="undo-btn" class="tool-btn" title="Undo"><i class="fas fa-undo"></i></button>
+                        <button id="redo-btn" class="tool-btn" title="Redo"><i class="fas fa-redo"></i></button>
                     </div>
 
                     <div class="color-picker">

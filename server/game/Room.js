@@ -27,6 +27,7 @@ class Room {
         // Drawing Data - Structured Storage
         // Array of strokes: { type: 'path', color, size, points: [{x,y}, ...] }
         this.strokes = [];
+        this.redoStrokes = [];
 
         // Timer
         this.timer = null;
@@ -35,6 +36,20 @@ class Room {
         // Hint System
         this.hints = []; // Indices of revealed letters
         this.hintInterval = null;
+    }
+
+    handleUndo() {
+        if (this.strokes.length === 0) return;
+        const last = this.strokes.pop();
+        this.redoStrokes.push(last);
+        this.io.to(this.id).emit('drawing_history', this.strokes);
+    }
+
+    handleRedo() {
+        if (this.redoStrokes.length === 0) return;
+        const stroke = this.redoStrokes.pop();
+        this.strokes.push(stroke);
+        this.io.to(this.id).emit('drawing_history', this.strokes);
     }
 
     // --- Player Management ---
@@ -127,6 +142,7 @@ class Room {
     startTurn() {
         this.currentWord = null;
         this.strokes = []; // Clear canvas server-side
+        this.redoStrokes = [];
         this.correctGuessers.clear();
         this.hints = [];
 
@@ -241,6 +257,7 @@ class Room {
         this.currentDrawerIndex = 0;
         this.players.forEach(p => p.score = 0);
         this.strokes = [];
+        this.redoStrokes = [];
         this.correctGuessers.clear();
         this.hints = [];
         this.wordChoices = [];
@@ -253,7 +270,7 @@ class Room {
         this.triggerRoundStart();
     }
 
-    resetGame(reason) {
+    resetGame(reason = "Game reset") {
         this.stopTimer();
         this.state = STATE_WAITING;
         if (this.hintInterval) clearInterval(this.hintInterval);
@@ -263,6 +280,7 @@ class Room {
         this.round = 1;
         this.currentDrawerIndex = 0;
         this.strokes = [];
+        this.redoStrokes = [];
         this.hints = [];
 
         this.broadcastPlayerUpdate();
@@ -320,6 +338,11 @@ class Room {
         if (this.state !== STATE_DRAWING) return;
         if (!this.isDrawer(socketId)) return;
 
+        // Any new drawing action invalidates redo history
+        if (data && (data.type === 'start' || data.type === 'bucket' || data.type === 'clear')) {
+            this.redoStrokes = [];
+        }
+
         // Validate color
         if (data.color && !this.config.isValidColor(data.color)) {
             // Silently correct or ignore? Let's ignore or default.
@@ -340,8 +363,10 @@ class Room {
 
         if (data.type === 'start') {
             this.currentStroke = {
+                type: 'path',
                 color: data.color,
                 size: data.size,
+                tool: data.tool || 'pencil',
                 points: [{ x: data.x, y: data.y }]
             };
             this.strokes.push(this.currentStroke);
@@ -349,8 +374,16 @@ class Room {
             this.currentStroke.points.push({ x: data.x, y: data.y });
         } else if (data.type === 'end') {
             this.currentStroke = null;
+        } else if (data.type === 'bucket') {
+            this.strokes.push({
+                type: 'bucket',
+                x: data.x,
+                y: data.y,
+                color: data.color,
+            });
         } else if (data.type === 'clear') {
             this.strokes = [];
+            this.redoStrokes = [];
             this.currentStroke = null;
         }
 

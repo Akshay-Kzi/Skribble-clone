@@ -90,13 +90,51 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('undo', () => {
+        if (!currentRoomId) return;
+        const room = getRoom(currentRoomId);
+        if (!room) return;
+        if (!room.isDrawer(socket.id)) return;
+        room.handleUndo();
+    });
+
+    socket.on('redo', () => {
+        if (!currentRoomId) return;
+        const room = getRoom(currentRoomId);
+        if (!room) return;
+        if (!room.isDrawer(socket.id)) return;
+        room.handleRedo();
+    });
+
+     socket.on('canvas_state_update', (data) => {
+         if (!currentRoomId) return;
+         const room = getRoom(currentRoomId);
+         if (!room) return;
+         if (!room.isDrawer(socket.id)) return;
+         if (!data || !data.buffer || !data.width || !data.height) return;
+
+         // Normalize to Buffer so socket.io treats it as binary across all clients.
+         const buf = Buffer.isBuffer(data.buffer)
+             ? data.buffer
+             : Buffer.from(new Uint8Array(data.buffer));
+
+         io.to(currentRoomId).emit('canvas_state_update', {
+             buffer: buf,
+             width: data.width,
+             height: data.height,
+             historyStep: data.historyStep,
+         });
+     });
+
     socket.on('clear_canvas', () => {
         if (!currentRoomId) return;
         const room = getRoom(currentRoomId);
         // Only drawer
         if (room && room.isDrawer(socket.id) && room.state === 'drawing') {
             room.strokes = [];
+            room.redoStrokes = [];
             io.to(currentRoomId).emit('clear_canvas');
+            io.to(currentRoomId).emit('drawing_history', []);
         }
     });
 
