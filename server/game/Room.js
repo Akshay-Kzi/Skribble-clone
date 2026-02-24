@@ -8,6 +8,20 @@ const STATE_DRAWING = 'drawing';
 const STATE_ROUND_END = 'round_end';
 const STATE_GAME_END = 'game_end';
 
+function sanitizeName(name) {
+    return String(name || '')
+        .replace(/[\r\n\t]/g, ' ')
+        .trim()
+        .slice(0, 15);
+}
+
+function sanitizeChatText(text) {
+    return String(text || '')
+        .replace(/[\r\n\t]/g, ' ')
+        .trim()
+        .slice(0, 120);
+}
+
 class Room {
     constructor(id, io, configData = {}) {
         this.id = id;
@@ -60,9 +74,15 @@ class Room {
             return false;
         }
 
+        const safeName = sanitizeName(name);
+        if (!safeName) {
+            socket.emit('error_message', 'Invalid Username');
+            return false;
+        }
+
         const player = {
             id: socket.id,
-            name: name.slice(0, 15), // Enforce name limit
+            name: safeName,
             score: 0,
             socket: socket
         };
@@ -302,7 +322,10 @@ class Room {
         if (this.isDrawer(socketId)) return;
         if (this.correctGuessers.has(socketId)) return; // Already guessed
 
-        if (text.trim().toLowerCase() === this.currentWord.toLowerCase()) {
+        const safeText = sanitizeChatText(text);
+        if (!safeText) return;
+
+        if (safeText.toLowerCase() === this.currentWord.toLowerCase()) {
             // Correct Guess
             this.correctGuessers.add(socketId);
 
@@ -330,7 +353,7 @@ class Room {
 
         } else {
             // Just chat
-            this.io.to(this.id).emit('chat_message', { name: player.name, text: text });
+            this.io.to(this.id).emit('chat_message', { name: player.name, text: safeText });
         }
     }
 
