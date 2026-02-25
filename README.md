@@ -52,19 +52,14 @@ A real-time multiplayer drawing and guessing game inspired by Skribbl.io.
 
 ## Screenshots
 
-<!-- Add your screenshots here! Place images in assets/screenshots/ folder -->
+### Room Creation
+![Room Creation](assets/screenshots/room-creation.png)
 
-### Game Interface
+### Game Interface with Drawing Tools
 ![Game Interface](assets/screenshots/game-interface.png)
-
-### Drawing Tools with Undo/Redo
-![Drawing Tools](assets/screenshots/drawing-tools.png)
 
 ### Leaderboard Results
 ![Leaderboard](assets/screenshots/leaderboard.png)
-
-### Room Creation
-![Room Creation](assets/screenshots/room-creation.png)
 
 ## Technical Details
 
