@@ -9,10 +9,13 @@ A real-time multiplayer drawing and guessing game inspired by Skribbl.io.
   - ✏️ Pencil for drawing
   - 🪣 Bucket/fill tool for coloring areas
   - 🧽 Eraser for corrections
+  - ↩️ Undo functionality with multiplayer sync
+  - ↪️ Redo functionality with multiplayer sync
 - **Game Logic**: Turn-based system with word selection, drawing, and guessing phases.
 - **Enhanced Leaderboard**: Podium-style results with gold/silver/bronze medals.
 - **Room Configuration**: Customize round time, max players, total rounds, and custom words.
 - **Chat**: Real-time chat for guessing words and talking to other players.
+- **Security**: Input validation, rate limiting, and XSS protection.
 
 ## Prerequisites
 - Node.js installed.
@@ -42,6 +45,7 @@ A real-time multiplayer drawing and guessing game inspired by Skribbl.io.
 4.  **Game Loop**:
     - **Pick**: The artist picks a word.
     - **Draw**: The artist draws the word using pencil, bucket fill, or eraser tools.
+    - **Undo/Redo**: The drawer can undo/redo strokes, with changes synchronized to all players.
     - **Guess**: Others guess the word in the chat.
     - **Score**: Points are awarded for speed and accuracy.
     - **Results**: View the enhanced leaderboard with podium medals at game end.
@@ -53,7 +57,7 @@ A real-time multiplayer drawing and guessing game inspired by Skribbl.io.
 ### Game Interface
 ![Game Interface](assets/screenshots/game-interface.png)
 
-### Drawing Tools
+### Drawing Tools with Undo/Redo
 ![Drawing Tools](assets/screenshots/drawing-tools.png)
 
 ### Leaderboard Results
@@ -61,3 +65,19 @@ A real-time multiplayer drawing and guessing game inspired by Skribbl.io.
 
 ### Room Creation
 ![Room Creation](assets/screenshots/room-creation.png)
+
+## Technical Details
+
+### Architecture
+- **Server**: Node.js with Express and Socket.IO
+- **Client**: Vanilla JavaScript with HTML5 Canvas
+- **Real-time Communication**: Socket.IO for multiplayer synchronization
+
+### Key Features
+- **Server-Authoritative Drawing**: All drawing strokes are stored on the server for consistency
+- **Undo/Redo System**: Full stroke history with redo stack, synchronized across all players
+- **Security**: Input validation, rate limiting, and XSS protection
+- **Robust Room Management**: Prevents race conditions and handles player joins/leaves gracefully
+
+### Environment Variables (Optional)
+- `ENABLE_CANVAS_STATE_SYNC=1`: Enable legacy canvas state synchronization (default: disabled)
